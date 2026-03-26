@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import Sidebar from '@/components/Sidebar';
+import { handlePayment } from '@/lib/paymentHandler';
 
 export default function PlacementsPage() {
   const { user, isLoaded } = useUser();
@@ -10,7 +11,7 @@ export default function PlacementsPage() {
   const [subscription, setSubscription] = useState(null);
   const [upgrading, setUpgrading] = useState(false);
   const [message, setMessage] = useState('');
-  const [paymentState, setPaymentState] = useState({ open: false, stage: 'processing', paymentId: '', amount: 499 });
+  const [paymentState, setPaymentState] = useState({ open: false, paymentId: '', amount: 499 });
 
   useEffect(() => { if (!isLoaded || !user) router.push('/login'); }, [user, isLoaded, router]);
 
@@ -29,14 +30,33 @@ export default function PlacementsPage() {
   const handleUpgrade = async (planType) => {
     setUpgrading(true);
     setMessage('');
-    try {
-      if (planType === 'pro') {
-        const paymentId = `pay_${Date.now().toString(36)}`;
-        setPaymentState({ open: true, stage: 'processing', paymentId, amount: 499 });
-        await new Promise((resolve) => setTimeout(resolve, 1300));
-        setPaymentState((prev) => ({ ...prev, stage: 'success' }));
-      }
 
+    if (planType === 'pro') {
+      await handlePayment({
+        amount: 499,
+        purpose: 'subscription',
+        metadata: {
+          planType,
+          userName: user?.fullName || user?.firstName || '',
+          userEmail: user?.primaryEmailAddress?.emailAddress || ''
+        },
+        onSuccess: async (result) => {
+          setPaymentState({ open: true, paymentId: result.paymentId || '', amount: 499 });
+          setMessage('Successfully upgraded to Premium! You are now visible to recruiters.');
+          await fetchSubscription();
+          setUpgrading(false);
+          setTimeout(() => setPaymentState({ open: false, paymentId: '', amount: 499 }), 1200);
+        },
+        onError: (error) => {
+          setMessage(error.error || 'Payment failed');
+          setUpgrading(false);
+        }
+      });
+
+      return;
+    }
+
+    try {
       const res = await fetch('/api/subscriptions/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -52,9 +72,6 @@ export default function PlacementsPage() {
     } catch {
       setMessage('Network error');
     } finally {
-      if (planType === 'pro') {
-        setTimeout(() => setPaymentState({ open: false, stage: 'processing', paymentId: '', amount: 499 }), 1200);
-      }
       setUpgrading(false);
     }
   };
@@ -147,7 +164,7 @@ export default function PlacementsPage() {
             <span className="absolute -top-3 left-6 bg-indigo-600 text-white text-xs font-medium px-3 py-1 rounded-full">Recommended</span>
             <h3 className="text-lg font-semibold text-slate-100">Premium 👑</h3>
             <p className="text-3xl font-bold text-slate-100 mt-3">₹499<span className="text-sm font-normal text-slate-500">/month</span></p>
-            <p className="text-sm text-slate-400 mt-1">Full career placement features (simulated)</p>
+            <p className="text-sm text-slate-400 mt-1">Full career placement features</p>
             <ul className="mt-6 space-y-3">
               {premiumFeatures.map((f) => (
                 <li key={f.label} className="flex items-center gap-2 text-sm">
@@ -222,20 +239,10 @@ export default function PlacementsPage() {
       {paymentState.open && (
         <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl">
-            {paymentState.stage === 'processing' ? (
-              <>
-                <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
-                <h3 className="text-lg font-semibold text-slate-900">Razorpay</h3>
-                <p className="mt-1 text-sm text-slate-600">Processing payment of ₹{paymentState.amount}...</p>
-              </>
-            ) : (
-              <>
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-2xl text-green-600">✓</div>
-                <h3 className="text-lg font-semibold text-slate-900">Razorpay Payment Successful</h3>
-                <p className="mt-1 text-sm text-slate-600">Premium subscription activated.</p>
-                <p className="mt-2 text-xs text-slate-500">Payment ID: {paymentState.paymentId}</p>
-              </>
-            )}
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-2xl text-green-600">✓</div>
+            <h3 className="text-lg font-semibold text-slate-900">Razorpay Payment Successful</h3>
+            <p className="mt-1 text-sm text-slate-600">Premium subscription activated.</p>
+            <p className="mt-2 text-xs text-slate-500">Payment ID: {paymentState.paymentId}</p>
           </div>
         </div>
       )}

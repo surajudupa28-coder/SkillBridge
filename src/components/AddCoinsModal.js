@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { handlePayment, getCoinPlans } from '@/lib/paymentHandler';
 
 export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -7,46 +8,56 @@ export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [paymentRef, setPaymentRef] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const plans = [
-    { amount: 100, price: 100, label: '₹100', popular: false },
-    { amount: 250, price: 250, label: '₹250', popular: true },
-    { amount: 500, price: 500, label: '₹500', popular: false },
-    { amount: 1000, price: 1000, label: '₹1000', popular: false },
-  ];
+  const plans = getCoinPlans().map((plan) => ({
+    coins: plan.coins,
+    price: plan.amount,
+    label: `₹${plan.amount}`,
+    popular: plan.popular
+  }));
 
   const parsedCustomAmount = Number.parseInt(customAmount, 10);
-  const purchaseAmount = selectedPlan ?? (Number.isFinite(parsedCustomAmount) ? parsedCustomAmount : 0);
-  const canPurchase = purchaseAmount >= 50 && !loading;
+  const purchasePrice = selectedPlan?.price ?? (Number.isFinite(parsedCustomAmount) ? parsedCustomAmount : 0);
+  const purchaseCoins = selectedPlan?.coins ?? (purchasePrice >= 50 ? purchasePrice : 0);
+  const canPurchase = purchasePrice >= 50 && purchaseCoins > 0 && !loading;
 
-  const handlePurchase = async (amount) => {
-    if (!amount || amount < 50) return;
+  const handlePurchase = async (amount, coins) => {
+    if (!amount || !coins) return;
+
+    if (amount < 50) {
+      setErrorMessage('Minimum purchase is ₹50.');
+      return;
+    }
 
     try {
       setLoading(true);
-      
-      // Simulate Razorpay payment flow
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      setErrorMessage('');
 
-      // Call wallet API
-      await fetch('/api/wallet/purchase', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount })
-      }).catch(() => null);
+      await handlePayment({
+        amount,
+        purpose: 'coins',
+        metadata: { coins },
+        onSuccess: (result) => {
+          setPaymentRef(result.paymentId || result.orderId || '');
+          setSuccess(true);
+          setLoading(false);
 
-      const fakeRef = `pay_${Date.now().toString(36)}`;
-      setPaymentRef(fakeRef);
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        setLoading(false);
-        onSuccess?.(amount);
-        handleClose();
-      }, 2000);
+          setTimeout(() => {
+            setSuccess(false);
+            onSuccess?.(coins);
+            handleClose();
+          }, 2000);
+        },
+        onError: (error) => {
+          setLoading(false);
+          setErrorMessage(error.error || 'Payment failed. Please try again.');
+        }
+      });
     } catch (err) {
       console.error('Purchase error:', err);
       setLoading(false);
+      setErrorMessage(err.message || 'Payment failed. Please try again.');
     }
   };
 
@@ -56,6 +67,7 @@ export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
     setSuccess(false);
     setLoading(false);
     setPaymentRef('');
+    setErrorMessage('');
     onClose();
   };
 
@@ -92,14 +104,15 @@ export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
               <div className="grid grid-cols-2 gap-3">
                 {plans.map((plan) => (
                   <button
-                    key={plan.amount}
+                    key={plan.price}
                     onClick={() => {
-                      setSelectedPlan(plan.amount);
+                      setSelectedPlan(plan);
                       setCustomAmount('');
+                      setErrorMessage('');
                     }}
                     disabled={loading}
                     className={`relative p-4 rounded-lg border-2 transition-all ${
-                      selectedPlan === plan.amount
+                      selectedPlan?.price === plan.price
                         ? 'border-indigo-600 bg-indigo-50'
                         : 'border-gray-200 hover:border-indigo-300'
                     } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -109,7 +122,7 @@ export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
                         <span className="bg-indigo-600 text-white text-xs px-2 py-1 rounded-full">Popular</span>
                       </div>
                     )}
-                    <div className="text-lg font-bold text-gray-900">{plan.amount}</div>
+                    <div className="text-lg font-bold text-gray-900">{plan.coins}</div>
                     <div className="text-xs text-gray-600">{plan.label}</div>
                   </button>
                 ))}
@@ -134,10 +147,12 @@ export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
                   onChange={(e) => {
                     setCustomAmount(e.target.value);
                     setSelectedPlan(null);
+                    setErrorMessage('');
                   }}
                   placeholder="Enter amount"
                   disabled={loading}
                   min="50"
+                  step="1"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg !bg-white !text-black caret-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-600 disabled:opacity-50"
                 />
               </div>
@@ -145,7 +160,7 @@ export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
 
             {/* Purchase Button */}
             <button
-              onClick={() => handlePurchase(purchaseAmount)}
+              onClick={() => handlePurchase(purchasePrice, purchaseCoins)}
               disabled={!canPurchase}
               className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
@@ -156,10 +171,12 @@ export default function AddCoinsModal({ isOpen, onClose, onSuccess }) {
                 </>
               ) : (
                 <>
-                  <span>₹</span> Purchase {purchaseAmount > 0 ? `(${purchaseAmount} SC)` : ''}
+                  <span>₹</span> Purchase {purchaseCoins > 0 ? `(${purchaseCoins} SC)` : ''}
                 </>
               )}
             </button>
+
+            {errorMessage && <p className="text-xs text-red-600 text-center">{errorMessage}</p>}
 
             {/* Info Text */}
             <p className="text-xs text-gray-500 text-center">
