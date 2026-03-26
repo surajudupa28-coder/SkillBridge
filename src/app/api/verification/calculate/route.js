@@ -16,12 +16,13 @@ export async function POST(request) {
     const verification = await SkillVerification.findOne({ user: user._id, skillName });
     if (!verification) return NextResponse.json({ error: 'No verification record found' }, { status: 404 });
 
+    const confidenceScore = verification.aiConfidenceScore || 0;
+
     const finalScore = Math.round(
-      (verification.testScore * 0.30) +
-      (verification.portfolioScore * 0.20) +
-      (verification.documentScore * 0.15) +
-      (verification.endorsementScore * 0.15) +
-      (verification.trialSessionScore * 0.20)
+      (verification.testScore * 0.40) +
+      (verification.portfolioScore * 0.30) +
+      (verification.documentScore * 0.20) +
+      (confidenceScore * 0.10)
     );
 
     verification.finalVerificationScore = finalScore;
@@ -51,11 +52,12 @@ export async function POST(request) {
       finalScore,
       passed: finalScore >= 75,
       breakdown: {
-        test: Math.round(verification.testScore * 0.30),
-        portfolio: Math.round(verification.portfolioScore * 0.20),
-        documents: Math.round(verification.documentScore * 0.15),
-        endorsements: Math.round(verification.endorsementScore * 0.15),
-        trialSession: Math.round(verification.trialSessionScore * 0.20)
+        test: Math.round(verification.testScore * 0.40),
+        portfolio: Math.round(verification.portfolioScore * 0.30),
+        documents: Math.round(verification.documentScore * 0.20),
+        aiConfidence: Math.round(confidenceScore * 0.10),
+        endorsements: Math.round(verification.endorsementScore * 0),
+        trialSession: Math.round(verification.trialSessionScore * 0)
       }
     });
   } catch (error) {

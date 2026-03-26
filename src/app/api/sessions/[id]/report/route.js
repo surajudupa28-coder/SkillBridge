@@ -13,6 +13,13 @@ export async function POST(request, { params }) {
     const session = await Session.findById(params.id);
     if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
+    const isParticipant =
+      session.mentor.toString() === user._id.toString() ||
+      session.learner.toString() === user._id.toString();
+    if (!isParticipant && user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const { reason } = await request.json();
     if (!reason) return NextResponse.json({ error: 'Reason is required' }, { status: 400 });
 

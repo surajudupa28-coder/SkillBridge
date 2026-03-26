@@ -3,6 +3,7 @@ import dbConnect from '@/lib/db';
 import DocumentSubmission from '@/models/DocumentSubmission';
 import SkillVerification from '@/models/SkillVerification';
 import { getAuthUser } from '@/lib/auth';
+import { extractDocumentText, evaluateDocumentForSkill } from '@/lib/documentEvaluation';
 
 export async function GET(request) {
   try {
@@ -28,7 +29,17 @@ export async function POST(request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     await dbConnect();
 
-    const { skillName, documentTitle, documentType, issuingOrganization, issueDate, description, fileURL, fileType } = await request.json();
+    const {
+      skillName,
+      documentTitle,
+      documentType,
+      issuingOrganization,
+      issueDate,
+      description,
+      fileURL,
+      fileType,
+      extractedText
+    } = await request.json();
 
     if (!skillName || !documentTitle || !documentType || !fileURL) {
       return NextResponse.json({ error: 'skillName, documentTitle, documentType, and fileURL are required' }, { status: 400 });
@@ -56,13 +67,45 @@ export async function POST(request) {
       fileType: fileType || 'link'
     });
 
+    // INTEGRATION POINT: Skill-aware document verification via Groq.
+    const text = await extractDocumentText({
+      extractedText,
+      fileURL,
+      documentTitle,
+      issuingOrganization,
+      description
+    });
+    const documentEval = await evaluateDocumentForSkill({ skill: skillName, text });
+    const documentRawScore = documentEval.score;
+    const scaledDocumentScore = Math.min(Math.round((documentRawScore / 20) * 100), 100);
+
+    doc.scoreAwarded = scaledDocumentScore;
+    doc.reviewerNotes = documentEval.reasoning;
+    await doc.save();
+
+    verification.documentScore = Math.max(verification.documentScore || 0, scaledDocumentScore);
+    verification.stages.documents = {
+      ...verification.stages.documents,
+      completed: scaledDocumentScore >= 40,
+      completedAt: scaledDocumentScore >= 40 ? new Date() : verification.stages.documents?.completedAt,
+      score: verification.documentScore
+    };
+
     if (verification.verificationStatus === 'unverified' || verification.verificationStatus === 'testing') {
       verification.verificationStatus = 'under-review';
     }
-    verification.stages.documents = { ...verification.stages.documents, completed: false };
     await verification.save();
 
-    return NextResponse.json({ document: doc }, { status: 201 });
+    return NextResponse.json({
+      document: doc,
+      documentEvaluation: {
+        relevanceScore: documentEval.relevanceScore,
+        credibilityScore: documentEval.credibilityScore,
+        score: documentRawScore,
+        reasoning: documentEval.reasoning,
+        fallbackScoring: documentEval.fallbackScoring
+      }
+    }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

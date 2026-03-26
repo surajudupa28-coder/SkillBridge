@@ -1,100 +1,181 @@
-'use client';
+﻿'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
+import { useUser } from '@clerk/nextjs';
+import { motion } from 'framer-motion';
+import { Activity, ArrowDownCircle, ArrowUpCircle, Wallet } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
-import TransactionList from '@/components/TransactionList';
+import WalletSummaryCard from '@/components/WalletSummaryCard';
+import AddCoinsModal from '@/components/AddCoinsModal';
+import TransactionHistoryList from '@/components/TransactionHistoryList';
+import QuickActionsSection from '@/components/QuickActionsSection';
+import GlassCard from '@/components/ui/GlassCard';
 
 export default function WalletPage() {
-  const { user, token, loading, updateUser } = useAuth();
+  const { user, isLoaded } = useUser();
   const router = useRouter();
-  const [transactions, setTransactions] = useState([]);
-  const [balance, setBalance] = useState(0);
-  const [purchaseAmount, setPurchaseAmount] = useState(50);
-  const [purchasing, setPurchasing] = useState(false);
-  const [msg, setMsg] = useState('');
-
-  useEffect(() => { if (!loading && !user) router.push('/login'); }, [user, loading, router]);
+  const [walletData, setWalletData] = useState({ balance: 0, transactions: [] });
+  const [loading, setLoading] = useState(true);
+  const [transLoading, setTransLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [isAddCoinsOpen, setIsAddCoinsOpen] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      fetch('/api/wallet', { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json())
-        .then(data => { setBalance(data.balance); setTransactions(data.transactions || []); })
-        .catch(() => {});
-    }
-  }, [token]);
+    if (isLoaded && !user) router.push('/login');
+  }, [user, isLoaded, router]);
 
-  const purchase = async () => {
-    setPurchasing(true);
-    setMsg('');
+  useEffect(() => {
+    if (isLoaded && user) {
+      fetchWalletData();
+    }
+  }, [isLoaded, user]);
+
+  const fetchWalletData = async () => {
     try {
-      const res = await fetch('/api/wallet/purchase', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ amount: purchaseAmount }),
-      });
+      setLoading(true);
+      const res = await fetch('/api/wallet');
+      if (!res.ok) {
+        throw new Error('Failed to fetch wallet data');
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setBalance(data.balance);
-      setMsg(`Purchased ${purchaseAmount} SkillCoins!`);
-      updateUser();
-      // Refresh transactions
-      const txRes = await fetch('/api/wallet', { headers: { Authorization: `Bearer ${token}` } });
-      const txData = await txRes.json();
-      setTransactions(txData.transactions || []);
-    } catch (err) { setMsg(err.message); } finally { setPurchasing(false); }
+      // Safely handle balance - support multiple possible field names
+      const balance = data?.balance ?? data?.walletBalance ?? data?.wallet?.balance ?? 0;
+      setWalletData({
+        balance: Math.max(0, parseInt(balance) || 0),
+        transactions: Array.isArray(data.transactions) ? data.transactions : []
+      });
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to load wallet');
+      console.error('Wallet fetch error:', err);
+      setWalletData({ balance: 0, transactions: [] });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (loading || !user) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>;
+  const handleAddCoinsSuccess = async (amount) => {
+    setIsAddCoinsOpen(false);
+    // Refresh wallet data after successful purchase
+    await fetchWalletData();
+  };
+
+  const handleAddCoinsClick = () => {
+    setIsAddCoinsOpen(true);
+  };
+
+  if (!isLoaded || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="saas-shell">
       <Sidebar />
-      <main className="ml-64 p-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Wallet</h1>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-2xl p-6 text-white">
-            <p className="text-sm opacity-80">Current Balance</p>
-            <p className="text-4xl font-bold mt-2">{balance} <span className="text-lg font-normal opacity-80">SC</span></p>
-            <p className="text-sm opacity-60 mt-2">SkillCoins</p>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="font-semibold text-gray-900 mb-3">Purchase SkillCoins</h3>
-            <p className="text-xs text-gray-400 mb-3">Simulated purchase — in production this integrates with a payment gateway.</p>
-            {msg && <div className="mb-3 p-2 bg-green-50 text-green-700 rounded text-sm">{msg}</div>}
-            <div className="flex gap-2 mb-3">
-              {[25, 50, 100, 250].map(amt => (
-                <button key={amt} onClick={() => setPurchaseAmount(amt)}
-                  className={`px-3 py-1.5 rounded-lg text-sm ${purchaseAmount === amt ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                  {amt} SC
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input type="number" value={purchaseAmount} onChange={e => setPurchaseAmount(parseInt(e.target.value) || 0)}
-                className="flex-1 px-3 py-2 border rounded-lg text-sm" />
-              <button onClick={purchase} disabled={purchasing || purchaseAmount <= 0}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
-                {purchasing ? 'Processing...' : 'Purchase'}
-              </button>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="font-semibold text-gray-900 mb-1">How SkillCoins Work</h3>
-            <div className="text-sm text-gray-500 space-y-2 mt-3">
-              <p><strong>Earn:</strong> Teach sessions to receive coins (80% of session price)</p>
-              <p><strong>Spend:</strong> Book sessions to learn new skills</p>
-              <p><strong>Escrow:</strong> Coins held safely until session completion</p>
-              <p><strong>Purchase:</strong> Buy more coins when needed</p>
-            </div>
-          </div>
+      <main className="saas-main">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="saas-heading inline-flex items-center gap-2"><Wallet className="h-7 w-7 text-cyan-300" /> Wallet</h1>
+          <p className="saas-subtext mt-2">Manage your SkillCoins and track your transactions</p>
         </div>
-        <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="font-semibold text-gray-900 mb-4">Transaction History</h3>
-          <TransactionList transactions={transactions} />
+
+        {/* Error Alert */}
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-400/30 bg-red-500/10 p-4 flex items-start gap-3">
+            <span className="text-red-600 text-xl">⚠️</span>
+            <div>
+              <p className="text-red-300 font-semibold text-sm">Error</p>
+              <p className="text-red-200 text-sm">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Main Content */}
+        <div className="space-y-6">
+          {/* Wallet Summary Card */}
+          <WalletSummaryCard
+            balance={walletData.balance}
+            onAddCoins={handleAddCoinsClick}
+            loading={loading}
+          />
+
+          {/* Quick Actions */}
+          <QuickActionsSection />
+
+          {/* Transaction History */}
+          <GlassCard className="p-8">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-slate-100 inline-flex items-center gap-2"><Activity className="h-6 w-6 text-indigo-300" /> Transaction History</h2>
+              <p className="text-slate-400 text-sm mt-1">Your recent wallet activity</p>
+            </div>
+
+            {transLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent"></div>
+              </div>
+            ) : (
+              <TransactionHistoryList
+                transactions={walletData.transactions}
+                loading={false}
+              />
+            )}
+          </GlassCard>
+
+          {/* Info Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <GlassCard className="p-6">
+              <div className="mb-3 inline-flex rounded-lg bg-cyan-500/20 p-2"><ArrowUpCircle className="h-5 w-5 text-cyan-300" /></div>
+              <h3 className="font-bold text-cyan-100 mb-3">How to Earn SkillCoins</h3>
+              <ul className="text-sm text-slate-300 space-y-2">
+                <li className="flex gap-2"><span>✓</span> Complete mentoring sessions</li>
+                <li className="flex gap-2"><span>✓</span> Get verified on skills</li>
+                <li className="flex gap-2"><span>✓</span> Reach leaderboard milestones</li>
+                <li className="flex gap-2"><span>✓</span> Earn badges and rewards</li>
+              </ul>
+            </GlassCard>
+
+            <GlassCard className="p-6">
+              <div className="mb-3 inline-flex rounded-lg bg-emerald-500/20 p-2"><ArrowDownCircle className="h-5 w-5 text-emerald-300" /></div>
+              <h3 className="font-bold text-emerald-100 mb-3">How to Spend SkillCoins</h3>
+              <ul className="text-sm text-slate-300 space-y-2">
+                <li className="flex gap-2"><span>✓</span> Book mentoring sessions</li>
+                <li className="flex gap-2"><span>✓</span> Access premium content</li>
+                <li className="flex gap-2"><span>✓</span> Request skill verification</li>
+                <li className="flex gap-2"><span>✓</span> Unlock learning paths</li>
+              </ul>
+            </GlassCard>
+          </div>
+
+          {/* FAQ Section */}
+          <GlassCard className="p-6">
+            <h3 className="font-bold text-slate-100 mb-4">Frequently Asked Questions</h3>
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="font-semibold text-slate-100 mb-1">💳 What is 1 SkillCoin worth?</p>
+                <p className="text-slate-400">1 SkillCoin = ₹1 | You can purchase in bulk for better rates</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-100 mb-1">🔄 Can I transfer SkillCoins?</p>
+                <p className="text-slate-400">SkillCoins can be used for services within SkillBridge</p>
+              </div>
+              <div>
+                <p className="font-semibold text-slate-100 mb-1">⏳ Do SkillCoins expire?</p>
+                <p className="text-slate-400">No, your SkillCoins never expire. Use them anytime!</p>
+              </div>
+            </div>
+          </GlassCard>
         </div>
       </main>
+
+      {/* Add Coins Modal */}
+      <AddCoinsModal
+        isOpen={isAddCoinsOpen}
+        onClose={() => setIsAddCoinsOpen(false)}
+        onSuccess={handleAddCoinsSuccess}
+      />
     </div>
   );
 }

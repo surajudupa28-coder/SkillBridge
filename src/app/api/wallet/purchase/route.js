@@ -3,6 +3,7 @@ import dbConnect from '@/lib/db';
 import User from '@/models/User';
 import Transaction from '@/models/Transaction';
 import { getAuthUser } from '@/lib/auth';
+import { verifyUserOtp } from '@/utils/otpVerification';
 
 export async function POST(request) {
   try {
@@ -10,9 +11,17 @@ export async function POST(request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     await dbConnect();
 
-    const { amount } = await request.json();
+    const { amount, otp } = await request.json();
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+    }
+
+    // Optional OTP verification for sensitive wallet actions.
+    if (otp) {
+      const otpResult = await verifyUserOtp(user, otp);
+      if (!otpResult.ok) {
+        return NextResponse.json({ error: otpResult.error }, { status: otpResult.status });
+      }
     }
 
     await User.findByIdAndUpdate(user._id, { $inc: { walletBalance: amount } });

@@ -45,6 +45,9 @@ export async function POST(request, { params }) {
     const avgRating = ratedSessions.reduce((sum, s) => sum + s.rating, 0) / ratedSessions.length;
 
     const mentor = await User.findById(session.mentor);
+    if (!mentor) {
+      return NextResponse.json({ error: 'Mentor not found' }, { status: 404 });
+    }
     mentor.averageRating = Math.round(avgRating * 100) / 100;
 
     // Reputation score calculation

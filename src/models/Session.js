@@ -12,6 +12,7 @@ const SessionSchema = new mongoose.Schema({
   rating: { type: Number, min: 1, max: 5 },
   review: { type: String },
   attendancePercent: { type: Number, default: 0 },
+  meetingLink: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 

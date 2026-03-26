@@ -28,6 +28,9 @@ export async function POST(request, { params }) {
     await session.save();
 
     const mentor = await User.findById(session.mentor);
+    if (!mentor) {
+      return NextResponse.json({ error: 'Mentor not found' }, { status: 404 });
+    }
     mentor.walletBalance += mentorPayment;
     mentor.sessionsCompleted += 1;
 

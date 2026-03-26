@@ -1,25 +1,53 @@
-import { NextResponse } from 'next/server';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-export function middleware(request) {
-  // Public paths that don't require auth
-  const publicPaths = ['/login', '/register', '/api/auth/login', '/api/auth/register'];
-  const { pathname } = request.nextUrl;
+const isPublicRoute = createRouteMatcher([
+  '/login(.*)',
+  '/register(.*)',
+  '/api/ai(.*)',
+  '/'
+]);
 
-  if (publicPaths.some(p => pathname.startsWith(p))) {
-    return NextResponse.next();
+// In-memory rate limiter for AI endpoints: track requests per IP
+const rateLimitStore = new Map();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute in ms
+const RATE_LIMIT_MAX = 30; // 30 requests per minute
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  if (!rateLimitStore.has(ip)) {
+    rateLimitStore.set(ip, []);
   }
-
-  // For API routes check authorization header
-  if (pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/')) {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  
+  const timestamps = rateLimitStore.get(ip);
+  // Remove entries older than window
+  const validTimestamps = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
+  
+  if (validTimestamps.length >= RATE_LIMIT_MAX) {
+    return false; // Rate limit exceeded
   }
-
-  return NextResponse.next();
+  
+  validTimestamps.push(now);
+  rateLimitStore.set(ip, validTimestamps);
+  return true; // Request allowed
 }
 
+export default clerkMiddleware(async (auth, request) => {
+  // Apply rate limiting to public AI endpoints
+  if (request.nextUrl.pathname.match(/^\/api\/ai/)) {
+    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown';
+    if (!checkRateLimit(ip)) {
+      return new Response(JSON.stringify({ error: 'Too many requests' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+  
+  if (!isPublicRoute(request)) {
+    await auth.protect();
+  }
+});
+
 export const config = {
-  matcher: ['/api/:path*']
+  matcher: ['/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)']
 };

@@ -1,8 +1,8 @@
-import { Inter } from 'next/font/google';
+import { Space_Grotesk } from 'next/font/google';
 import './globals.css';
-import { AuthProvider } from '@/context/AuthContext';
+import { ClerkProvider } from '@clerk/nextjs';
 
-const inter = Inter({ subsets: ['latin'] });
+const spaceGrotesk = Space_Grotesk({ subsets: ['latin'] });
 
 export const metadata = {
   title: 'SkillBridge AI - Peer-to-Peer Skill Marketplace',
@@ -11,10 +11,12 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <AuthProvider>{children}</AuthProvider>
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body className={spaceGrotesk.className}>
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

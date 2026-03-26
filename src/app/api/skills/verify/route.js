@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/db';
 import User from '@/models/User';
 import SkillTest from '@/models/SkillTest';
+import SkillVerification from '@/models/SkillVerification';
 import { getAuthUser } from '@/lib/auth';
 
 export async function POST(request) {
@@ -25,7 +26,17 @@ export async function POST(request) {
     });
 
     if (passed) {
-      await User.findByIdAndUpdate(user._id, { $addToSet: { verifiedSkills: skill } });
+      // Prevent self-award: only add to verifiedSkills if admin or skill is verified via proper flow
+      const isAdmin = user.role === 'admin';
+      const isVerified = await SkillVerification.findOne({
+        user: user._id,
+        skillName: skill,
+        verificationStatus: 'verified'
+      });
+      
+      if (isAdmin || isVerified) {
+        await User.findByIdAndUpdate(user._id, { $addToSet: { verifiedSkills: skill } });
+      }
     }
 
     return NextResponse.json({ skillTest, passed });

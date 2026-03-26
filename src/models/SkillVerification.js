@@ -20,6 +20,7 @@ const SkillVerificationSchema = new mongoose.Schema({
   testScore: { type: Number, default: 0 },
   portfolioScore: { type: Number, default: 0 },
   documentScore: { type: Number, default: 0 },
+  aiConfidenceScore: { type: Number, default: 0 },
   endorsementScore: { type: Number, default: 0 },
   trialSessionScore: { type: Number, default: 0 },
   finalVerificationScore: { type: Number, default: 0 },

@@ -6,16 +6,33 @@ const AnswerSchema = new mongoose.Schema({
   selectedAnswer: { type: String },
   textAnswer: { type: String },
   isCorrect: { type: Boolean },
+  aiEvaluation: {
+    score: { type: Number },
+    feedback: { type: String },
+    fallbackScoring: { type: Boolean }
+  },
   timeSpent: { type: Number, default: 0 },
   flagged: { type: Boolean, default: false }
+}, { _id: false });
+
+const AttemptQuestionSchema = new mongoose.Schema({
+  questionNumber: { type: Number, required: true },
+  questionType: { type: String, enum: ['mcq', 'scenario', 'explanation'], required: true },
+  question: { type: String, required: true },
+  options: [{ type: String }],
+  correctAnswer: { type: String },
+  expectedConcepts: [{ type: String }],
+  difficulty: { type: String }
 }, { _id: false });
 
 const SkillTestAttemptSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   skillName: { type: String, required: true },
   verification: { type: mongoose.Schema.Types.ObjectId, ref: 'SkillVerification' },
+  questions: [AttemptQuestionSchema],
   answers: [AnswerSchema],
   score: { type: Number, default: 0 },
+  aiConfidenceScore: { type: Number, default: 0 },
   totalQuestions: { type: Number, default: 13 },
   passed: { type: Boolean, default: false },
   timeTaken: { type: Number, default: 0 },

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import dbConnect from '@/lib/db';
 import User from '@/models/User';
 import Session from '@/models/Session';
@@ -31,6 +32,10 @@ export async function POST(request) {
     }
 
     const sessionPrice = price || 30;
+    if (!mongoose.Types.ObjectId.isValid(mentorId)) {
+      return NextResponse.json({ error: 'Invalid mentorId' }, { status: 400 });
+    }
+
     const mentor = await User.findById(mentorId);
     if (!mentor) return NextResponse.json({ error: 'Mentor not found' }, { status: 404 });
     if (mentor.suspended) return NextResponse.json({ error: 'Mentor is suspended' }, { status: 400 });
@@ -39,9 +44,6 @@ export async function POST(request) {
     if (learner.walletBalance < sessionPrice) {
       return NextResponse.json({ error: 'Insufficient SkillCoins' }, { status: 400 });
     }
-
-    learner.walletBalance -= sessionPrice;
-    await learner.save();
 
     const session = await Session.create({
       mentor: mentorId,
@@ -53,6 +55,12 @@ export async function POST(request) {
       escrowAmount: sessionPrice,
       status: 'scheduled'
     });
+
+    learner.walletBalance -= sessionPrice;
+    await learner.save();
+
+    session.meetingLink = `https://meet.jit.si/skillbridge-session-${session._id}`;
+    await session.save();
 
     await Transaction.create({
       user: user._id,
